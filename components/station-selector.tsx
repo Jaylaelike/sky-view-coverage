@@ -6,16 +6,19 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Loader2 } from "lucide-react"
 import type { Station } from "@/types/map"
 import { Radio, RadioGroup } from "@/components/ui/radio-group"
 
 interface StationSelectorProps {
   stations: Station[]
   onStationChange: (stations: Station[]) => void
-  onCompareStations: (stationIds: string[]) => void
+  onCompareStations?: (stationIds: string[]) => void
+  isLoading?: boolean
 }
 
-export default function StationSelector({ stations, onStationChange, onCompareStations }: StationSelectorProps) {
+export default function StationSelector({ stations, onStationChange, onCompareStations, isLoading }: StationSelectorProps) {
   const [selectedStations, setSelectedStations] = useState<Station[]>(stations || [])
   const [compareMode, setCompareMode] = useState(false)
   const [compareStation1, setCompareStation1] = useState<string>(stations?.[0]?.id || "")
@@ -33,6 +36,44 @@ export default function StationSelector({ stations, onStationChange, onCompareSt
       }
     }
   }, [stations, compareStation1, compareStation2])
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading Stations...
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center space-x-2">
+              <Skeleton className="h-4 w-4" />
+              <Skeleton className="h-4 flex-1" />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Show empty state
+  if (!stations || stations.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>No Stations Available</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            No station data could be loaded. Please check your data source.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   const handleStationToggle = (stationId: string, checked: boolean) => {
     const updatedStations = selectedStations.map((station) => {
@@ -55,7 +96,7 @@ export default function StationSelector({ stations, onStationChange, onCompareSt
   }
 
   const handleCompare = () => {
-    if (compareStation1 && compareStation2) {
+    if (compareStation1 && compareStation2 && onCompareStations) {
       onCompareStations([compareStation1, compareStation2])
       setCompareMode(true)
     }
@@ -64,7 +105,7 @@ export default function StationSelector({ stations, onStationChange, onCompareSt
   const handleResetCompare = () => {
     setCompareMode(false)
     if (stations && stations.length > 0) {
-      onStationChange(stations.map((station) => ({ ...station, visible: true })))
+      onStationChange(stations.map((station) => ({ ...station, visible: false })))
     }
   }
 
@@ -101,7 +142,7 @@ export default function StationSelector({ stations, onStationChange, onCompareSt
               <Checkbox
                 id="select-all"
                 checked={selectedStations.every((s) => s.visible)}
-                onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                onCheckedChange={(checked) => handleSelectAll( !!checked)}
               />
               <Label htmlFor="select-all" className="text-sm font-medium">
                 เลือกทั้งหมด

@@ -59,7 +59,7 @@ async function loadStationsFromCSV(): Promise<Station[]> {
       name: stationName,
       bounds: parseCoordinates(coordinates),
       imageUrl: imageUrl || '',
-      visible: true,
+      visible: false,
     }
   }).filter(Boolean) as Station[] // Remove null entries
 
