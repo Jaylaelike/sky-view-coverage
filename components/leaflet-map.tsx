@@ -8,6 +8,7 @@ import CoverageLegend from "@/components/coverage-legend"
 import { Button } from "@/components/ui/button"
 import { MapPin, Loader2, Satellite, Maximize2 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface LeafletMapProps {
   stations: Station[]
@@ -33,6 +34,9 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
   const [locationLoading, setLocationLoading] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [hasInitializedView, setHasInitializedView] = useState(false)
+  
+  // Mobile detection for responsive design
+  const isMobile = useIsMobile()
 
   // Memoize visible stations to prevent unnecessary re-renders
   const visibleStations = useMemo(() => 
@@ -220,14 +224,15 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           }).addTo(map)
 
           marker.bindPopup(`
-            <div style="min-width: 200px;">
+            <div style="min-width: 200px; text-align: center;">
               <h3 style="margin: 0 0 10px 0; color: #333;"><strong>${data.stationNameThai || data.stationNameEng}</strong></h3>
               <p style="margin: 5px 0;"><strong>Type:</strong> ${data.stationType}</p>
               <p style="margin: 5px 0;"><strong>Location:</strong> ${data.location}</p>
               <p style="margin: 5px 0;"><strong>Height:</strong> ${data.height}m</p>
               <p style="margin: 5px 0;"><strong>Max ERP:</strong> ${data.maxERP} kW</p>
-              <div style="margin-top: 10px; padding: 8px; background: #f0f8ff; border-left: 3px solid #007cba; font-size: 12px;">
-                💡 Click anywhere on this marker to view detailed technical specifications
+              <div style="margin-top: 15px; padding: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                📋 คลิกที่หมุดนี้เพื่อดูรายละเอียดแบบเต็ม<br>
+                <span style="font-size: 11px; opacity: 0.9;">Click this pin for full technical details</span>
               </div>
             </div>
           `)
@@ -235,6 +240,8 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           marker.on("click", () => {
             setSelectedTechnical(data)
             setTechnicalModalOpen(true)
+            // Close any existing popup when opening modal
+            marker.closePopup()
           })
 
           technicalMarkerRefs.current[data.id] = marker
@@ -385,7 +392,7 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
       {/* Map Loading Skeleton */}
       {isMapLoading && (
         <div className="absolute inset-0 z-[999] bg-white">
-          <div className="h-full w-full flex flex-col">
+          <div className="h-full w-full flex flex-col p-4">
             <Skeleton className="h-8 w-48 mb-4" />
             <Skeleton className="flex-1 rounded-lg" />
             <div className="flex justify-between items-center mt-4">
@@ -396,73 +403,119 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
         </div>
       )}
 
-      <div ref={mapRef} className="h-full w-full rounded-lg" style={{ minHeight: "400px" }} />
+      <div 
+        ref={mapRef} 
+        className={`h-full w-full ${isMobile ? 'rounded-none' : 'rounded-lg'}`} 
+        style={{ minHeight: isMobile ? "100vh" : "400px" }} 
+      />
       
-      {/* Coverage Legend */}
-      <CoverageLegend />
+      {/* Coverage Legend - Position optimized for mobile */}
+      <div className={isMobile ? "absolute top-2 left-2 z-[1000]" : ""}>
+        <CoverageLegend />
+      </div>
       
-      {/* Technical Data Loading Indicator */}
+      {/* Technical Data Loading Indicator - Mobile optimized */}
       {technicalDataLoading && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-md text-sm shadow-lg z-[1000] flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>กำลังโหลดข้อมูลสถานี...</span>
+        <div className={`absolute ${isMobile ? 'top-16 left-2 right-2' : 'top-4 left-1/2 transform -translate-x-1/2'} bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded-lg text-sm shadow-lg z-[1000] flex items-center gap-2 max-w-[90vw]`}>
+          <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+          <span className="truncate">{isMobile ? 'กำลังโหลด...' : 'กำลังโหลดข้อมูลสถานี...'}</span>
         </div>
       )}
       
-      {/* Current Location Button */}
-      <Button
-        onClick={flyToUserLocation}
-        disabled={locationLoading || !isMapReady}
-        className="absolute bottom-4 left-4 z-[1000] bg-blue-600 hover:bg-blue-700 text-white shadow-lg"
-        title="Go to my location"
-      >
-        {locationLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-        ) : (
-          <MapPin className="h-4 w-4 mr-2" />
+      {/* Control Buttons - Mobile-first responsive design */}
+      <div className={`absolute z-[1000] ${
+        isMobile 
+          ? 'bottom-4 left-2 right-2 flex flex-col gap-2' 
+          : 'bottom-4 left-4 right-4 flex flex-col sm:flex-row gap-2 sm:justify-between'
+      }`}>
+        {/* Main control buttons */}
+        <div className={`flex ${isMobile ? 'flex-row justify-center' : 'flex-col sm:flex-row'} gap-2`}>
+          {/* Current Location Button */}
+          <Button
+            onClick={flyToUserLocation}
+            disabled={locationLoading || !isMapReady}
+            className={`${
+              isMobile 
+                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xl text-base px-4 py-3 h-auto flex-1 touch-manipulation' 
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg text-sm px-3 py-2 h-auto'
+            }`}
+            title="Go to my location"
+          >
+            {locationLoading ? (
+              <Loader2 className={`h-4 w-4 animate-spin ${isMobile ? 'mr-3' : 'mr-2'}`} />
+            ) : (
+              <MapPin className={`h-4 w-4 ${isMobile ? 'mr-3' : 'mr-2'}`} />
+            )}
+            <span className={isMobile ? 'block' : 'hidden sm:inline'}>
+              {isMobile ? 'ตำแหน่งปัจจุบัน' : 'ตำแหน่งปัจจุบัน'}
+            </span>
+            <span className={isMobile ? 'hidden' : 'sm:hidden'}>ตำแหน่ง</span>
+          </Button>
+          
+          {/* Fit Bounds Button */}
+          <Button
+            onClick={fitBoundsToStations}
+            disabled={!isMapReady || visibleStations.length === 0}
+            className={`${
+              isMobile 
+                ? 'bg-green-600 hover:bg-green-700 text-white shadow-xl text-base px-4 py-3 h-auto flex-1 touch-manipulation' 
+                : 'bg-green-600 hover:bg-green-700 text-white shadow-lg text-sm px-3 py-2 h-auto'
+            }`}
+            title="Fit view to all visible stations"
+          >
+            <Maximize2 className={`h-4 w-4 ${isMobile ? 'mr-3' : 'mr-2'}`} />
+            <span className={isMobile ? 'block' : 'hidden sm:inline'}>
+              {isMobile ? 'แสดงทุกสถานี' : 'แสดงทุกสถานี'}
+            </span>
+            <span className={isMobile ? 'hidden' : 'sm:hidden'}>ทุกสถานี</span>
+          </Button>
+        </div>
+
+        {/* Status indicator - Hidden on mobile for clean interface */}
+        {isMapReady && !technicalDataLoading && !isMobile && (
+          <div className="hidden sm:flex bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-full text-xs shadow-lg items-center gap-2 self-end">
+            <Satellite className="h-3 w-3" />
+            <span>แผนที่พร้อมใช้งาน</span>
+          </div>
         )}
-        {locationLoading ? "กำลังค้นหา..." : "ตำแหน่งปัจจุบัน"}
-      </Button>
+      </div>
       
-      {/* Fit Bounds Button */}
-      <Button
-        onClick={fitBoundsToStations}
-        disabled={!isMapReady || visibleStations.length === 0}
-        className="absolute bottom-4 left-48 z-[1000] bg-green-600 hover:bg-green-700 text-white shadow-lg"
-        title="Fit view to all visible stations"
-      >
-        <Maximize2 className="h-4 w-4 mr-2" />
-        แสดงทุกสถานี
-      </Button>
-      
-      {/* Map Status Indicator */}
-      {isMapReady && !technicalDataLoading && (
-        <div className="absolute bottom-4 right-20 bg-green-50 border border-green-200 text-green-700 px-3 py-1 rounded-full text-xs shadow-lg z-[1000] flex items-center gap-1">
-          <Satellite className="h-3 w-3" />
-          <span>แผนที่พร้อมใช้งาน</span>
-        </div>
-      )}
-      
-      {/* Location Error Message */}
+      {/* Location Error Message - Mobile optimized */}
       {locationError && (
-        <div className="absolute top-4 left-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-md text-sm shadow-lg z-[1000] max-w-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-red-500">⚠️</span>
-            {locationError}
+        <div className={`absolute ${
+          isMobile 
+            ? 'top-24 left-2 right-2' 
+            : 'top-4 left-4 right-4 sm:left-4 sm:right-auto sm:max-w-xs'
+        } bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm shadow-lg z-[1000]`}>
+          <div className="flex items-start gap-2">
+            <span className="text-red-500 flex-shrink-0">⚠️</span>
+            <span className="flex-1">{locationError}</span>
           </div>
         </div>
       )}
       
-      {/* General Error Message */}
+      {/* General Error Message - Mobile optimized */}
       {error && (
-        <div className="absolute bottom-16 left-4 right-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-md text-sm">
-          {error}
+        <div className={`absolute ${
+          isMobile 
+            ? 'bottom-24 left-2 right-2' 
+            : 'bottom-20 sm:bottom-16 left-4 right-4'
+        } bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm shadow-lg z-[1000]`}>
+          <div className="flex items-start gap-2">
+            <span className="text-red-500 flex-shrink-0">❌</span>
+            <span className="flex-1">{error}</span>
+          </div>
         </div>
       )}
       
       {/* Technical Modal */}
       {selectedTechnical && (
-        <TechnicalModal data={selectedTechnical} open={technicalModalOpen} onOpenChange={setTechnicalModalOpen} />
+        <TechnicalModal 
+          data={selectedTechnical} 
+          open={technicalModalOpen} 
+          onOpenChange={setTechnicalModalOpen}
+          position="auto"
+        />
       )}
     </>
   )

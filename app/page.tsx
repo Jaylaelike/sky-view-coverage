@@ -10,11 +10,13 @@ import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, ImageIcon, MapPin, AlertCircle, Globe, Layers, Settings, RefreshCw, Satellite } from "lucide-react"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import { Loader2, ImageIcon, MapPin, AlertCircle, Globe, Layers, Settings, RefreshCw, Satellite, Menu, X } from "lucide-react"
 import MapComponent from "@/components/map-component"
 import StationSelector from "@/components/station-selector"
 import CoverageLegend from "@/components/coverage-legend"
 import { useMapData } from "@/hooks/use-map-data"
+import { useIsMobile } from "@/hooks/use-mobile"
 import type { ImageOverlayData, Station } from "@/types/map"
 
 export default function HomePage() {
@@ -22,6 +24,10 @@ export default function HomePage() {
   const [isMapLoading, setIsMapLoading] = useState(false)
   const [activeTab, setActiveTab] = useState("map")
   const [stationVisibility, setStationVisibility] = useState<Record<string, boolean>>({})
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  
+  // Mobile detection hook
+  const isMobile = useIsMobile()
   
   // Use optimized data loading hook
   const { 
@@ -131,12 +137,181 @@ export default function HomePage() {
     setStationVisibility(newVisibility)
   }
 
+  // Sidebar content component for reuse
+  const SidebarContent = () => (
+    <div className="space-y-4">
+      <Tabs defaultValue="stations" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="stations" className="flex items-center">
+            <MapPin className="h-4 w-4 mr-2" />
+            Stations
+          </TabsTrigger>
+          <TabsTrigger value="layers" className="flex items-center">
+            <Layers className="h-4 w-4 mr-2" />
+            Layers
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="stations" className="space-y-4">
+          <StationSelector 
+            stations={stations} 
+            onStationChange={handleStationChange} 
+            onCompareStations={handleCompareStations}
+            isLoading={isStationsLoading}
+          />
+        </TabsContent>
+
+        <TabsContent value="layers" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Image Overlay</CardTitle>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-muted-foreground">
+                    {overlayData ? 'Active' : 'Inactive'}
+                  </span>
+                  <Switch 
+                    checked={!!overlayData}
+                    onCheckedChange={(checked) => !checked && clearOverlay()}
+                    disabled={isMapLoading}
+                  />
+                </div>
+              </div>
+              <CardDescription>
+                Add a custom image overlay to the map
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="imageUrl">Image URL</Label>
+                <Input
+                  id="imageUrl"
+                  placeholder="https://example.com/image.jpg"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  className="font-mono text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="swLat" className="text-xs">SW Latitude</Label>
+                  <Input
+                    id="swLat"
+                    type="number"
+                    step="any"
+                    value={swLat}
+                    onChange={(e) => setSwLat(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="swLng" className="text-xs">SW Longitude</Label>
+                  <Input
+                    id="swLng"
+                    type="number"
+                    step="any"
+                    value={swLng}
+                    onChange={(e) => setSwLng(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="neLat" className="text-xs">NE Latitude</Label>
+                  <Input
+                    id="neLat"
+                    type="number"
+                    step="any"
+                    value={neLat}
+                    onChange={(e) => setNeLat(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="neLng" className="text-xs">NE Longitude</Label>
+                  <Input
+                    id="neLng"
+                    type="number"
+                    step="any"
+                    value={neLng}
+                    onChange={(e) => setNeLng(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Opacity: {opacity}%</span>
+                </div>
+                <Slider
+                  value={[opacity]}
+                  onValueChange={([value]) => setOpacity(value)}
+                  min={0}
+                  max={100}
+                  step={1}
+                  className="py-2"
+                />
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <Button 
+                  onClick={handleAddOverlay}
+                  className="flex-1"
+                  disabled={isMapLoading}
+                >
+                  {isMapLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Applying...
+                    </>
+                  ) : (
+                    'Apply Overlay'
+                  )}
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={clearOverlay}
+                  disabled={!overlayData || isMapLoading}
+                >
+                  Clear
+                </Button>
+              </div>
+
+              {error && (
+                <div className="text-sm text-destructive inline-flex items-center mt-2">
+                  <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-2">
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="mr-2 md:hidden"
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+            )}
+            
             <Globe className="h-6 w-6 text-primary" />
             <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
               SkyView Coverage
@@ -194,164 +369,28 @@ export default function HomePage() {
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-full md:w-80 border-r bg-card/50 backdrop-blur-sm overflow-y-auto p-4 space-y-4">
-          <Tabs defaultValue="stations" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="stations" className="flex items-center">
-                <MapPin className="h-4 w-4 mr-2" />
-                Stations
-              </TabsTrigger>
-              <TabsTrigger value="layers" className="flex items-center">
-                <Layers className="h-4 w-4 mr-2" />
-                Layers
-              </TabsTrigger>
-            </TabsList>
+        {/* Mobile Sheet */}
+        <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
+          <SheetContent side="left" className="w-80 p-4">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Station Controls
+              </SheetTitle>
+            </SheetHeader>
+            <div className="mt-4">
+              <SidebarContent />
+            </div>
+          </SheetContent>
+        </Sheet>
 
-            <TabsContent value="stations" className="space-y-4">
-              <StationSelector 
-                stations={stations} 
-                onStationChange={handleStationChange} 
-                onCompareStations={handleCompareStations}
-                isLoading={isStationsLoading}
-              />
-            
-            </TabsContent>
-
-            <TabsContent value="layers" className="space-y-4">
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">Image Overlay</CardTitle>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs text-muted-foreground">
-                        {overlayData ? 'Active' : 'Inactive'}
-                      </span>
-                      <Switch 
-                        checked={!!overlayData}
-                        onCheckedChange={(checked) => !checked && clearOverlay()}
-                        disabled={isMapLoading}
-                      />
-                    </div>
-                  </div>
-                  <CardDescription>
-                    Add a custom image overlay to the map
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="imageUrl">Image URL</Label>
-                    <Input
-                      id="imageUrl"
-                      placeholder="https://example.com/image.jpg"
-                      value={imageUrl}
-                      onChange={(e) => setImageUrl(e.target.value)}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="swLat" className="text-xs">SW Latitude</Label>
-                      <Input
-                        id="swLat"
-                        type="number"
-                        step="any"
-                        value={swLat}
-                        onChange={(e) => setSwLat(e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="swLng" className="text-xs">SW Longitude</Label>
-                      <Input
-                        id="swLng"
-                        type="number"
-                        step="any"
-                        value={swLng}
-                        onChange={(e) => setSwLng(e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="neLat" className="text-xs">NE Latitude</Label>
-                      <Input
-                        id="neLat"
-                        type="number"
-                        step="any"
-                        value={neLat}
-                        onChange={(e) => setNeLat(e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="neLng" className="text-xs">NE Longitude</Label>
-                      <Input
-                        id="neLng"
-                        type="number"
-                        step="any"
-                        value={neLng}
-                        onChange={(e) => setNeLng(e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-2">
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Opacity: {opacity}%</span>
-                    </div>
-                    <Slider
-                      value={[opacity]}
-                      onValueChange={([value]) => setOpacity(value)}
-                      min={0}
-                      max={100}
-                      step={1}
-                      className="py-2"
-                    />
-                  </div>
-
-                  <div className="flex space-x-2 pt-2">
-                    <Button 
-                      onClick={handleAddOverlay}
-                      className="flex-1"
-                      disabled={isMapLoading}
-                    >
-                      {isMapLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Applying...
-                        </>
-                      ) : (
-                        'Apply Overlay'
-                      )}
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      onClick={clearOverlay}
-                      disabled={!overlayData || isMapLoading}
-                    >
-                      Clear
-                    </Button>
-                  </div>
-
-                  {error && (
-                    <div className="text-sm text-destructive inline-flex items-center mt-2">
-                      <AlertCircle className="h-4 w-4 mr-1.5 flex-shrink-0" />
-                      <span>{error}</span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+        {/* Desktop Sidebar - Hidden on Mobile */}
+        <aside className="hidden md:flex w-80 border-r bg-card/50 backdrop-blur-sm overflow-y-auto p-4">
+          <SidebarContent />
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 relative bg-muted/20">
+        <main className={`flex-1 relative ${isMobile ? 'bg-black' : 'bg-muted/20'}`}>
           <MapComponent 
             stations={stations} 
             overlayData={overlayData} 
@@ -359,6 +398,22 @@ export default function HomePage() {
             isLoading={isLoading} 
             isDataLoading={isLoading}
           />
+          
+          {/* Mobile Floating Action Button */}
+          {isMobile && !isMobileSidebarOpen && (
+            <Button
+              onClick={() => setIsMobileSidebarOpen(true)}
+              className="fixed bottom-6 left-6 z-50 rounded-full shadow-lg bg-primary hover:bg-primary/90 size-14 p-0"
+              size="lg"
+            >
+              <div className="flex flex-col items-center">
+                <MapPin className="h-5 w-5" />
+                <span className="text-xs font-medium">
+                  {stations.filter(s => s.visible).length}
+                </span>
+              </div>
+            </Button>
+          )}
           
           {/* Status Bar */}
           {/* <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-background/90 backdrop-blur-sm px-4 py-2 rounded-full border shadow-sm flex items-center space-x-4 text-xs text-muted-foreground">
