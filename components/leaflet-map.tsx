@@ -219,8 +219,51 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
             return
           }
 
+          // Create custom orange tower icon
+          const towerIcon = L.divIcon({
+            className: 'custom-tower-marker',
+            html: `
+              <div style="
+                background-color: #ff8c00;
+                border: 3px solid #fff;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+                position: relative;
+              ">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 21V10a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v11"/>
+                  <path d="M12 8V3"/>
+                  <path d="M8 8l4-5 4 5"/>
+                  <circle cx="12" cy="8" r="2"/>
+                  <path d="M9 21h6"/>
+                  <path d="M10 21v-2a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/>
+                </svg>
+                <div style="
+                  position: absolute;
+                  bottom: -8px;
+                  left: 50%;
+                  transform: translateX(-50%);
+                  width: 0;
+                  height: 0;
+                  border-left: 8px solid transparent;
+                  border-right: 8px solid transparent;
+                  border-top: 8px solid #ff8c00;
+                "></div>
+              </div>
+            `,
+            iconSize: [40, 48],
+            iconAnchor: [20, 48],
+            popupAnchor: [0, -48]
+          })
+
           const marker = L.marker([data.latitude, data.longitude], {
             title: data.stationNameThai || data.stationNameEng,
+            icon: towerIcon
           }).addTo(map)
 
           marker.bindPopup(`
