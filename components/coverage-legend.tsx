@@ -17,7 +17,7 @@ export default function CoverageLegend() {
         variant="outline"
         size="sm"
         onClick={() => setIsVisible(true)}
-        className="absolute top-4 right-4 z-[1000] bg-white shadow-lg hover:bg-gray-100 px-3 py-2"
+        className="absolute top-20 right-4 z-[999] bg-white shadow-lg hover:bg-gray-100 px-3 py-2"
       >
         <Eye className="h-4 w-4 mr-2" />
         แสดงคำอธิบาย
@@ -26,7 +26,7 @@ export default function CoverageLegend() {
   }
 
   return (
-    <div className="absolute top-4 right-4 z-[1000] bg-white shadow-lg rounded-lg border border-gray-200 max-w-xs">
+    <div className="absolute top-20 right-4 z-[999] bg-white shadow-lg rounded-lg border border-gray-200 max-w-xs">
       {/* Header with collapse/close buttons */}
       <div className="flex items-center justify-between p-3 border-b border-gray-200">
         <h3 className="text-sm font-semibold text-gray-900">ระดับความแรงของสัญญาณ</h3>

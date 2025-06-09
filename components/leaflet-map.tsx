@@ -5,10 +5,19 @@ import type { Station, TechnicalData } from "@/types/map"
 import { technicalData, getTechnicalData } from "@/data/technical"
 import TechnicalModal from "@/components/technical-modal" // Assuming TechnicalModal is defined elsewhere
 import CoverageLegend from "@/components/coverage-legend"
+import LocationAnalysis from "@/components/location-analysis"
 import { Button } from "@/components/ui/button"
 import { MapPin, Loader2, Satellite, Maximize2 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { 
+  calculateDistance, 
+  calculateBearing, 
+  findNearestStations,
+  formatDistanceDetailed,
+  type StationDistance,
+  type Coordinates
+} from "@/lib/geo-utils"
 
 interface LeafletMapProps {
   stations: Station[]
@@ -34,6 +43,14 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
   const [locationLoading, setLocationLoading] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [hasInitializedView, setHasInitializedView] = useState(false)
+  
+  // Location analysis state
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null)
+  const [showLocationAnalysis, setShowLocationAnalysis] = useState(false)
+  const [nearestStations, setNearestStations] = useState<StationDistance[]>([])
+  const [showLineOfSight, setShowLineOfSight] = useState(false)
+  const [lineOfSightRefs, setLineOfSightRefs] = useState<Record<string, any>>({})
+  const [userMarkerRef, setUserMarkerRef] = useState<any>(null)
   
   // Mobile detection for responsive design
   const isMobile = useIsMobile()
@@ -313,6 +330,14 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords
+        const userCoords: Coordinates = { latitude, longitude }
+        
+        // Store user location for analysis
+        setUserLocation(userCoords)
+        
+        // Find nearest stations for analysis - include technical data
+        const nearest = findNearestStations(userCoords, visibleStations, currentTechnicalData, 5)
+        setNearestStations(nearest)
         
         if (mapInstanceRef.current) {
           // Fly to user's location with zoom level 15
@@ -320,28 +345,103 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
             duration: 2 // Animation duration in seconds
           })
           
-          // Optionally add a temporary marker at user's location
+          // Add a persistent user location marker
           import("leaflet").then((L) => {
+            // Remove existing user marker if it exists
+            if (userMarkerRef) {
+              mapInstanceRef.current.removeLayer(userMarkerRef)
+            }
+            
+            // Create custom icon for user location
+            const userIcon = L.divIcon({
+              className: 'user-location-marker',
+              html: `
+                <div style="
+                  position: relative;
+                  width: 20px;
+                  height: 20px;
+                ">
+                  <!-- Outer pulse ring -->
+                  <div style="
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 40px;
+                    height: 40px;
+                    background: rgba(0, 122, 255, 0.2);
+                    border-radius: 50%;
+                    animation: userLocationPulse 2s infinite;
+                  "></div>
+                  
+                  <!-- Inner dot -->
+                  <div style="
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: #007AFF;
+                    border: 3px solid white;
+                    border-radius: 50%;
+                    width: 20px;
+                    height: 20px;
+                    box-shadow: 0 2px 6px rgba(0, 122, 255, 0.4);
+                    z-index: 2;
+                  "></div>
+                  
+                  <!-- Accuracy indicator -->
+                  <div style="
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 60px;
+                    height: 60px;
+                    border: 2px solid rgba(0, 122, 255, 0.3);
+                    border-radius: 50%;
+                    animation: userLocationBreathe 3s infinite ease-in-out;
+                  "></div>
+                </div>
+                <style>
+                  @keyframes userLocationPulse {
+                    0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+                    100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
+                  }
+                  @keyframes userLocationBreathe {
+                    0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
+                    50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.1; }
+                  }
+                </style>
+              `,
+              iconSize: [60, 60],
+              iconAnchor: [30, 30]
+            })
+            
             const userMarker = L.marker([latitude, longitude], {
+              icon: userIcon,
               title: "Your Location"
             }).addTo(mapInstanceRef.current)
             
             userMarker.bindPopup(`
-              <div style="text-align: center;">
-                <h4 style="margin: 0 0 5px 0;">📍 Your Current Location</h4>
-                <p style="margin: 0; font-size: 12px; color: #666;">
+              <div style="text-align: center; min-width: 200px;">
+                <h4 style="margin: 0 0 8px 0; color: #007AFF;">📍 Your Current Location</h4>
+                <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">
                   Lat: ${latitude.toFixed(6)}<br>
                   Lng: ${longitude.toFixed(6)}
                 </p>
+                <button onclick="document.querySelector('[data-location-analysis]').click()" 
+                        style="background: #007AFF; color: white; border: none; padding: 6px 12px; 
+                               border-radius: 4px; font-size: 12px; cursor: pointer;">
+                  Analyze Location
+                </button>
               </div>
             `).openPopup()
             
-            // Remove the marker after 10 seconds
-            setTimeout(() => {
-              if (mapInstanceRef.current) {
-                mapInstanceRef.current.removeLayer(userMarker)
-              }
-            }, 10000)
+            // Store user marker reference
+            setUserMarkerRef(userMarker)
+            
+            // Show location analysis
+            setShowLocationAnalysis(true)
           })
         }
         
@@ -430,6 +530,150 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     })
   }, [visibleStations])
 
+  // Function to toggle line-of-sight visualization
+  const toggleLineOfSight = useCallback(async () => {
+    if (!mapInstanceRef.current || !userLocation) return
+
+    const L = await import("leaflet")
+    const map = mapInstanceRef.current
+
+    if (showLineOfSight) {
+      // Remove all line-of-sight lines
+      Object.values(lineOfSightRefs).forEach(line => {
+        if (line) map.removeLayer(line)
+      })
+      setLineOfSightRefs({})
+      setShowLineOfSight(false)
+    } else {
+      // Add line-of-sight lines to nearest stations
+      const newLineRefs: Record<string, any> = {}
+      
+      nearestStations.forEach(station => {
+        // Get coordinates based on station type
+        let stationLat: number, stationLng: number
+        
+        if (station.station.type === 'technical') {
+          // Technical stations have direct latitude/longitude properties
+          stationLat = station.station.latitude
+          stationLng = station.station.longitude
+        } else {
+          // Coverage stations have bounds arrays
+          stationLat = (station.station.bounds[0][0] + station.station.bounds[1][0]) / 2
+          stationLng = (station.station.bounds[0][1] + station.station.bounds[1][1]) / 2
+        }
+        
+        // Create line with gradient color based on distance
+        const getLineColor = (distance: number) => {
+          if (distance < 5) return '#22c55e' // Green - very close
+          if (distance < 15) return '#3b82f6' // Blue - close
+          if (distance < 30) return '#f59e0b' // Orange - medium
+          return '#ef4444' // Red - far
+        }
+        
+        const line = L.polyline([
+          [userLocation.latitude, userLocation.longitude],
+          [stationLat, stationLng]
+        ], {
+          color: getLineColor(station.distance),
+          weight: 3,
+          opacity: 0.8,
+          dashArray: station.station.type === 'technical' ? '10, 5' : '5, 5',
+          interactive: false,
+          className: 'line-of-sight-line'
+        }).addTo(map)
+
+        // Add distance and direction label at midpoint
+        const midLat = (userLocation.latitude + stationLat) / 2
+        const midLng = (userLocation.longitude + stationLng) / 2
+        
+        const distanceLabel = L.marker([midLat, midLng], {
+          icon: L.divIcon({
+            className: 'distance-label',
+            html: `<div style="
+              background: ${getLineColor(station.distance)};
+              color: white;
+              padding: 4px 8px;
+              border-radius: 12px;
+              font-size: 11px;
+              font-weight: bold;
+              white-space: nowrap;
+              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+              border: 2px solid white;
+              text-align: center;
+              min-width: 60px;
+            ">
+              <div>${formatDistanceDetailed(station.distance)}</div>
+              <div style="font-size: 9px; opacity: 0.9;">${station.direction.split('(')[0].trim()}</div>
+            </div>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0]
+          }),
+          interactive: false
+        }).addTo(map)
+
+        // Add station marker enhancement for line-of-sight mode
+        const stationMarker = L.circleMarker([stationLat, stationLng], {
+          radius: 8,
+          fillColor: getLineColor(station.distance),
+          color: 'white',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8,
+          interactive: false
+        }).addTo(map)
+
+        newLineRefs[station.station.id] = L.layerGroup([line, distanceLabel, stationMarker])
+      })
+      
+      setLineOfSightRefs(newLineRefs)
+      setShowLineOfSight(true)
+    }
+  }, [showLineOfSight, userLocation, nearestStations, lineOfSightRefs])
+
+  // Function to fly to a specific station from location analysis
+  const flyToStation = useCallback((station: any) => {
+    if (!mapInstanceRef.current) return
+
+    // Get coordinates based on station type
+    let centerLat: number, centerLng: number
+    
+    if (station.type === 'technical') {
+      // Technical stations have direct latitude/longitude properties
+      centerLat = station.latitude
+      centerLng = station.longitude
+    } else {
+      // Coverage stations have bounds arrays
+      centerLat = (station.bounds[0][0] + station.bounds[1][0]) / 2
+      centerLng = (station.bounds[0][1] + station.bounds[1][1]) / 2
+    }
+
+    mapInstanceRef.current.flyTo([centerLat, centerLng], 14, {
+      duration: 2
+    })
+  }, [])
+
+  // Function to close location analysis
+  const closeLocationAnalysis = useCallback(() => {
+    setShowLocationAnalysis(false)
+    setUserLocation(null)
+    setNearestStations([])
+    
+    // Remove line-of-sight visualization
+    if (showLineOfSight && mapInstanceRef.current) {
+      Object.values(lineOfSightRefs).forEach(line => {
+        if (line) mapInstanceRef.current.removeLayer(line)
+      })
+      setLineOfSightRefs({})
+      setShowLineOfSight(false)
+    }
+    
+    // Remove user marker
+    if (userMarkerRef && mapInstanceRef.current) {
+      mapInstanceRef.current.removeLayer(userMarkerRef)
+      setUserMarkerRef(null)
+    }
+  }, [showLineOfSight, lineOfSightRefs, userMarkerRef])
+
   return (
     <>
       {/* Map Loading Skeleton */}
@@ -453,13 +697,13 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
       />
       
       {/* Coverage Legend - Position optimized for mobile */}
-      <div className={isMobile ? "absolute top-2 left-2 z-[1000]" : ""}>
+      <div className={isMobile ? "absolute top-20 left-2 z-[999]" : ""}>
         <CoverageLegend />
       </div>
       
       {/* Technical Data Loading Indicator - Mobile optimized */}
       {technicalDataLoading && (
-        <div className={`absolute ${isMobile ? 'top-16 left-2 right-2' : 'top-4 left-1/2 transform -translate-x-1/2'} bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded-lg text-sm shadow-lg z-[1000] flex items-center gap-2 max-w-[90vw]`}>
+        <div className={`absolute ${isMobile ? 'top-32 left-2 right-2' : 'top-20 left-1/2 transform -translate-x-1/2'} bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded-lg text-sm shadow-lg z-[999] flex items-center gap-2 max-w-[90vw]`}>
           <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
           <span className="truncate">{isMobile ? 'กำลังโหลด...' : 'กำลังโหลดข้อมูลสถานี...'}</span>
         </div>
@@ -483,6 +727,7 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
                 : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg text-sm px-3 py-2 h-auto'
             }`}
             title="Go to my location"
+            data-location-analysis
           >
             {locationLoading ? (
               <Loader2 className={`h-4 w-4 animate-spin ${isMobile ? 'mr-3' : 'mr-2'}`} />
@@ -527,9 +772,9 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
       {locationError && (
         <div className={`absolute ${
           isMobile 
-            ? 'top-24 left-2 right-2' 
-            : 'top-4 left-4 right-4 sm:left-4 sm:right-auto sm:max-w-xs'
-        } bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm shadow-lg z-[1000]`}>
+            ? 'top-36 left-2 right-2' 
+            : 'top-20 left-4 right-4 sm:left-4 sm:right-auto sm:max-w-xs'
+        } bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm shadow-lg z-[999]`}>
           <div className="flex items-start gap-2">
             <span className="text-red-500 flex-shrink-0">⚠️</span>
             <span className="flex-1">{locationError}</span>
@@ -543,7 +788,7 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           isMobile 
             ? 'bottom-24 left-2 right-2' 
             : 'bottom-20 sm:bottom-16 left-4 right-4'
-        } bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm shadow-lg z-[1000]`}>
+        } bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm shadow-lg z-[999]`}>
           <div className="flex items-start gap-2">
             <span className="text-red-500 flex-shrink-0">❌</span>
             <span className="flex-1">{error}</span>
@@ -558,6 +803,18 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           open={technicalModalOpen} 
           onOpenChange={setTechnicalModalOpen}
           position="auto"
+        />
+      )}
+      
+      {/* Location Analysis Panel */}
+      {showLocationAnalysis && userLocation && nearestStations.length > 0 && (
+        <LocationAnalysis
+          userLocation={userLocation}
+          nearestStations={nearestStations}
+          showLineOfSight={showLineOfSight}
+          onToggleLineOfSight={toggleLineOfSight}
+          onFlyToStation={flyToStation}
+          onClose={closeLocationAnalysis}
         />
       )}
     </>

@@ -46,7 +46,7 @@ export default function MapComponent({ stations, overlayData, technicalData, isL
     <div className="h-full w-full relative z-0">
       {/* Search Bar */}
       {technicalData && technicalData.length > 0 && (
-        <div className="absolute top-4 left-4 z-[1000] max-w-md">
+        <div className="absolute top-20 left-4 z-[1000] max-w-md">
           <TechnicalSearch
             technicalData={technicalData}
             onLocationSelect={handleTechnicalPointSelect}

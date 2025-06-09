@@ -297,7 +297,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-[1001]">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             {/* Mobile Menu Button */}
@@ -403,7 +403,7 @@ export default function HomePage() {
           {isMobile && !isMobileSidebarOpen && (
             <Button
               onClick={() => setIsMobileSidebarOpen(true)}
-              className="fixed bottom-6 left-6 z-50 rounded-full shadow-lg bg-primary hover:bg-primary/90 size-14 p-0"
+              className="fixed bottom-6 left-6 z-[1000] rounded-full shadow-lg bg-primary hover:bg-primary/90 size-14 p-0"
               size="lg"
             >
               <div className="flex flex-col items-center">
