@@ -1,7 +1,7 @@
 "use client"
 import dynamic from "next/dynamic"
 import { Loader2 } from "lucide-react"
-import { useCallback, useRef } from "react"
+import React, { useCallback, useRef, useMemo } from "react"
 import type { Station, ImageOverlayData, TechnicalData } from "@/types/map"
 import TechnicalSearch from "@/components/technical-search"
 
@@ -27,8 +27,10 @@ const DynamicMap = dynamic(() => import("./leaflet-map"), {
   ),
 })
 
-export default function MapComponent({ stations, overlayData, technicalData, isLoading, isDataLoading, isOverlayLoading }: MapComponentProps) {
+const MapComponent = ({ stations, overlayData, technicalData, isLoading, isDataLoading, isOverlayLoading }: MapComponentProps) => {
   const flyToTechnicalPointRef = useRef<((data: TechnicalData) => void) | null>(null)
+  // Memoize visible stations to avoid recalculating on every render
+  const visibleStations = useMemo(() => stations.filter(s => s.visible), [stations])
 
   // Handle technical point selection from search
   const handleTechnicalPointSelect = useCallback((data: TechnicalData) => {
@@ -72,7 +74,7 @@ export default function MapComponent({ stations, overlayData, technicalData, isL
         </div>
       )}
 
-      {stations.filter((s) => s.visible).length === 0 && (
+      {visibleStations.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/20 rounded-lg pointer-events-none">
           <div className="text-center space-y-2">
             <div className="text-muted-foreground">ไม่มีสถานีที่เลือกแสดง</div>
@@ -82,4 +84,7 @@ export default function MapComponent({ stations, overlayData, technicalData, isL
       )}
     </div>
   )
-}
+};
+
+export default React.memo(MapComponent);
+

@@ -65,6 +65,13 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
   
   // Mobile detection for responsive design
   const isMobile = useIsMobile()
+  // Detect low-end devices (≤4 cores or ≤2 GB RAM)
+  const isLowEndDevice = useMemo(() => {
+    if (typeof navigator === "undefined") return false
+    const cores = (navigator as any).hardwareConcurrency || 8
+    const memory = (navigator as any).deviceMemory || 4
+    return cores <= 4 || memory <= 2
+  }, [])
 
   // Memoize visible stations to prevent unnecessary re-renders
   const visibleStations = useMemo(() => 
@@ -128,7 +135,13 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           mapInstanceRef.current.remove()
         }
 
-        const map = L.map(mapRef.current).setView([10.5, 100], 6) // Center on Thailand with wider view
+        const map = L.map(mapRef.current, {
+            preferCanvas: true,
+            zoomControl: !isMobile,
+            attributionControl: false,
+            inertia: true,
+            zoomAnimation: !isLowEndDevice,
+          }).setView([10.5, 100], 6) // Center on Thailand
 
         // Add default tile layer (satellite map)
         const satelliteLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
