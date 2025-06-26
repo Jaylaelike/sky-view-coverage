@@ -11,6 +11,7 @@ interface MapComponentProps {
   technicalData?: TechnicalData[]
   isLoading?: boolean
   isDataLoading?: boolean
+  isOverlayLoading?: boolean
 }
 
 // Dynamically import the actual map to avoid SSR issues
@@ -26,7 +27,7 @@ const DynamicMap = dynamic(() => import("./leaflet-map"), {
   ),
 })
 
-export default function MapComponent({ stations, overlayData, technicalData, isLoading, isDataLoading }: MapComponentProps) {
+export default function MapComponent({ stations, overlayData, technicalData, isLoading, isDataLoading, isOverlayLoading }: MapComponentProps) {
   const flyToTechnicalPointRef = useRef<((data: TechnicalData) => void) | null>(null)
 
   // Handle technical point selection from search
@@ -61,6 +62,15 @@ export default function MapComponent({ stations, overlayData, technicalData, isL
         isDataLoading={isDataLoading}
         onTechnicalPointSelect={handleMapTechnicalPointSelect}
       />
+
+      {isOverlayLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-[1000]">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            กำลังโหลดภาพ...
+          </div>
+        </div>
+      )}
 
       {stations.filter((s) => s.visible).length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/20 rounded-lg pointer-events-none">

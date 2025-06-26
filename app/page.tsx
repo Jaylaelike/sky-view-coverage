@@ -397,6 +397,7 @@ export default function HomePage() {
             technicalData={technicalData}
             isLoading={isLoading} 
             isDataLoading={isLoading}
+            isOverlayLoading={isMapLoading}
           />
           
           {/* Mobile Floating Action Button */}

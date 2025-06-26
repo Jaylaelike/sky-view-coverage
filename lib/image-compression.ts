@@ -6,7 +6,9 @@ export const DEFAULT_COMPRESSION_OPTIONS = {
   maxWidthOrHeight: 1920, // Max width or height  
   useWebWorker: true, // Use web worker for better performance
   preserveExif: false, // Remove EXIF data to reduce size
-  fileType: 'image/webp' // Use WebP format for better compression
+  fileType: 'image/webp', // Use WebP format for better compression
+  initialQuality: 0.85, // High quality setting (0.1 to 1.0)
+  alwaysKeepResolution: true, // P
 }
 
 // Alternative options for high-quality overlays
@@ -15,7 +17,9 @@ export const HIGH_QUALITY_COMPRESSION_OPTIONS = {
   maxWidthOrHeight: 2560,
   useWebWorker: true,
   preserveExif: false,
-  fileType: 'image/webp'
+  fileType: 'image/webp',
+  initialQuality: 0.85, // High quality setting (0.1 to 1.0)
+  alwaysKeepResolution: true, // P
 }
 
 // Cache for compressed images to avoid re-compression

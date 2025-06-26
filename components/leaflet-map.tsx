@@ -40,6 +40,8 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
   const technicalMarkerRefs = useRef<Record<string, any>>({})
   const [isMapReady, setIsMapReady] = useState(false)
   const [isMapLoading, setIsMapLoading] = useState(true)
+  // Track number of image overlays currently loading
+  const [overlayLoadingCount, setOverlayLoadingCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [selectedTechnical, setSelectedTechnical] = useState<TechnicalData | null>(null)
   const [technicalModalOpen, setTechnicalModalOpen] = useState(false)
@@ -184,6 +186,7 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
             
             try {
               // Compress the image before creating overlay
+              setOverlayLoadingCount(c => c + 1) // increment loader counter
               const compressedImageUrl = await compressImageFromUrl(station.imageUrl)
               
               const imageOverlay = L.imageOverlay(compressedImageUrl, station.bounds, {
@@ -197,10 +200,12 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
               })
 
               imageOverlay.on("load", () => {
+                setOverlayLoadingCount((c) => Math.max(0, c - 1))
                 console.log(`Compressed overlay for ${station.name} loaded successfully`)
               })
 
               imageOverlay.on("error", (e: any) => {
+                setOverlayLoadingCount((c) => Math.max(0, c - 1))
                 console.error(`Failed to load overlay for ${station.name}:`, e)
                 setError(`Failed to load image for ${station.name}. Please check the URL.`)
               })
@@ -210,6 +215,7 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
             } catch (compressionError) {
               console.error(`Failed to compress image for ${station.name}:`, compressionError)
               // Fallback to original image URL if compression fails
+              setOverlayLoadingCount(c => c + 1)
               const imageOverlay = L.imageOverlay(station.imageUrl, station.bounds, {
                 opacity: 0.6,
                 interactive: false,
@@ -220,10 +226,12 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
               })
 
               imageOverlay.on("load", () => {
+                setOverlayLoadingCount((c) => Math.max(0, c - 1))
                 console.log(`Original overlay for ${station.name} loaded successfully (compression failed)`)
               })
 
               imageOverlay.on("error", (e: any) => {
+                setOverlayLoadingCount((c) => Math.max(0, c - 1))
                 console.error(`Failed to load overlay for ${station.name}:`, e)
                 setError(`Failed to load image for ${station.name}. Please check the URL.`)
               })
@@ -901,6 +909,16 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
         </div>
       )}
       
+      {/* Loading spinner for overlay images */}
+      {overlayLoadingCount > 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-300 z-[1200]">
+          <div className="bg-white/90 dark:bg-zinc-900/90 rounded-xl shadow-xl px-6 py-5 flex flex-col items-center space-y-3 animate-pulse">
+            <Loader2 className="h-8 w-8 text-primary animate-spin" />
+            <span className="text-sm font-medium text-primary/80">Loading image layer...</span>
+          </div>
+        </div>
+      )}
+
       {/* Technical Modal */}
       {selectedTechnical && (
         <TechnicalModal 
