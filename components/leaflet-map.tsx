@@ -18,6 +18,11 @@ import {
   type StationDistance,
   type Coordinates
 } from "@/lib/geo-utils"
+import { 
+  compressImageFromUrl, 
+  clearCompressedImageCache,
+  getCompressionCacheStats 
+} from "@/lib/image-compression"
 
 interface LeafletMapProps {
   stations: Station[]
@@ -177,27 +182,55 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           if (station.visible && station.imageUrl) {
             console.log(`Adding overlay for station: ${station.name}`)
             
-            const imageOverlay = L.imageOverlay(station.imageUrl, station.bounds, {
-              opacity: 0.6,
-              interactive: false,
-              crossOrigin: "anonymous",
-              className: `station-overlay-${station.id}`,
-              // Add performance optimizations
-              pane: 'overlayPane',
-              bubblingMouseEvents: false
-            })
+            try {
+              // Compress the image before creating overlay
+              const compressedImageUrl = await compressImageFromUrl(station.imageUrl)
+              
+              const imageOverlay = L.imageOverlay(compressedImageUrl, station.bounds, {
+                opacity: 0.6,
+                interactive: false,
+                crossOrigin: "anonymous",
+                className: `station-overlay-${station.id}`,
+                // Add performance optimizations
+                pane: 'overlayPane',
+                bubblingMouseEvents: false
+              })
 
-            imageOverlay.on("load", () => {
-              console.log(`Overlay for ${station.name} loaded successfully`)
-            })
+              imageOverlay.on("load", () => {
+                console.log(`Compressed overlay for ${station.name} loaded successfully`)
+              })
 
-            imageOverlay.on("error", (e: any) => {
-              console.error(`Failed to load overlay for ${station.name}:`, e)
-              setError(`Failed to load image for ${station.name}. Please check the URL.`)
-            })
+              imageOverlay.on("error", (e: any) => {
+                console.error(`Failed to load overlay for ${station.name}:`, e)
+                setError(`Failed to load image for ${station.name}. Please check the URL.`)
+              })
 
-            imageOverlay.addTo(map)
-            overlayRefs.current[station.id] = imageOverlay
+              imageOverlay.addTo(map)
+              overlayRefs.current[station.id] = imageOverlay
+            } catch (compressionError) {
+              console.error(`Failed to compress image for ${station.name}:`, compressionError)
+              // Fallback to original image URL if compression fails
+              const imageOverlay = L.imageOverlay(station.imageUrl, station.bounds, {
+                opacity: 0.6,
+                interactive: false,
+                crossOrigin: "anonymous",
+                className: `station-overlay-${station.id}`,
+                pane: 'overlayPane',
+                bubblingMouseEvents: false
+              })
+
+              imageOverlay.on("load", () => {
+                console.log(`Original overlay for ${station.name} loaded successfully (compression failed)`)
+              })
+
+              imageOverlay.on("error", (e: any) => {
+                console.error(`Failed to load overlay for ${station.name}:`, e)
+                setError(`Failed to load image for ${station.name}. Please check the URL.`)
+              })
+
+              imageOverlay.addTo(map)
+              overlayRefs.current[station.id] = imageOverlay
+            }
           }
         }
 
@@ -713,6 +746,14 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     newLayer.addTo(map)
     tileLayerRef.current = newLayer
     setCurrentLayer(layerType)
+  }, [])
+
+  // Cleanup blob URLs on component unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Clean up all cached blob URLs
+      clearCompressedImageCache()
+    }
   }, [])
 
   return (
