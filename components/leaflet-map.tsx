@@ -48,6 +48,10 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
   const [userLocation, setUserLocation] = useState<Coordinates | null>(null)
   const [showLocationAnalysis, setShowLocationAnalysis] = useState(false)
   const [nearestStations, setNearestStations] = useState<StationDistance[]>([])
+  
+  // Map layer state
+  const [currentLayer, setCurrentLayer] = useState<'street' | 'satellite'>('satellite')
+  const tileLayerRef = useRef<any>(null)
   const [showLineOfSight, setShowLineOfSight] = useState(false)
   const [lineOfSightRefs, setLineOfSightRefs] = useState<Record<string, any>>({})
   const [userMarkerRef, setUserMarkerRef] = useState<any>(null)
@@ -119,10 +123,14 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
 
         const map = L.map(mapRef.current).setView([10.5, 100], 6) // Center on Thailand with wider view
 
-        // Add tile layer
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        }).addTo(map)
+        // Add default tile layer (satellite map)
+        const satelliteLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+          attribution: '&copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics',
+          maxZoom: 18,
+        })
+        
+        satelliteLayer.addTo(map)
+        tileLayerRef.current = satelliteLayer
 
         mapInstanceRef.current = map
         setIsMapReady(true)
@@ -166,12 +174,17 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           }
 
           // Add new overlay if station is visible
-          if (station.visible) {
+          if (station.visible && station.imageUrl) {
             console.log(`Adding overlay for station: ${station.name}`)
+            
             const imageOverlay = L.imageOverlay(station.imageUrl, station.bounds, {
               opacity: 0.6,
               interactive: false,
               crossOrigin: "anonymous",
+              className: `station-overlay-${station.id}`,
+              // Add performance optimizations
+              pane: 'overlayPane',
+              bubblingMouseEvents: false
             })
 
             imageOverlay.on("load", () => {
@@ -210,7 +223,7 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     }
 
     updateOverlays()
-  }, [stations, isMapReady, visibleStations])
+  }, [stations, isMapReady, visibleStations, hasInitializedView, shouldFitBounds])
 
   // Add technical data markers when data is loaded and map is ready
   useEffect(() => {
@@ -674,6 +687,34 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     }
   }, [showLineOfSight, lineOfSightRefs, userMarkerRef])
 
+  // Function to switch map layers
+  const switchMapLayer = useCallback(async (layerType: 'street' | 'satellite') => {
+    if (!mapInstanceRef.current || !tileLayerRef.current) return
+    
+    const map = mapInstanceRef.current
+    const L = await import("leaflet")
+    
+    // Remove current tile layer
+    map.removeLayer(tileLayerRef.current)
+    
+    // Add new tile layer based on type
+    let newLayer
+    if (layerType === 'satellite') {
+      newLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        attribution: '&copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics',
+        maxZoom: 18,
+      })
+    } else {
+      newLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      })
+    }
+    
+    newLayer.addTo(map)
+    tileLayerRef.current = newLayer
+    setCurrentLayer(layerType)
+  }, [])
+
   return (
     <>
       {/* Map Loading Skeleton */}
@@ -756,6 +797,29 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
               {isMobile ? 'แสดงทุกสถานี' : 'แสดงทุกสถานี'}
             </span>
             <span className={isMobile ? 'hidden' : 'sm:hidden'}>ทุกสถานี</span>
+          </Button>
+          
+          {/* Layer Switch Button */}
+          <Button
+            onClick={() => switchMapLayer(currentLayer === 'street' ? 'satellite' : 'street')}
+            disabled={!isMapReady}
+            className={`${
+              isMobile 
+                ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-xl text-base px-4 py-3 h-auto flex-1 touch-manipulation' 
+                : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg text-sm px-3 py-2 h-auto'
+            }`}
+            title={currentLayer === 'street' ? 'Switch to satellite view' : 'Switch to street view'}
+          >
+            <Satellite className={`h-4 w-4 ${isMobile ? 'mr-3' : 'mr-2'}`} />
+            <span className={isMobile ? 'block' : 'hidden sm:inline'}>
+              {currentLayer === 'street' ? 
+                (isMobile ? 'ดาวเทียม' : 'ดาวเทียม') : 
+                (isMobile ? 'แผนที่' : 'แผนที่')
+              }
+            </span>
+            <span className={isMobile ? 'hidden' : 'sm:hidden'}>
+              {currentLayer === 'street' ? 'ดาวเทียม' : 'แผนที่'}
+            </span>
           </Button>
         </div>
 
