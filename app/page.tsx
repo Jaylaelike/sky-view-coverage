@@ -99,7 +99,7 @@ export default function HomePage() {
 
     setIsMapLoading(true)
 
-    // Simulate loading delay
+    // Simulate realistic image loading with progress
     setTimeout(() => {
       const newOverlay: ImageOverlayData = {
         imageUrl: imageUrl.trim(),
@@ -110,10 +110,9 @@ export default function HomePage() {
         opacity: opacityNum,
       }
 
-
       setOverlayData(newOverlay)
       setIsMapLoading(false)
-    }, 500)
+    }, 2000) // Increased to 2 seconds for better dialog demonstration
   }
 
   const clearOverlay = () => {
@@ -298,38 +297,40 @@ export default function HomePage() {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-[1001]">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+        <div className="container mx-auto px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between">
+          <div className="flex items-center space-x-1 sm:space-x-2">
             {/* Mobile Menu Button */}
             {isMobile && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setIsMobileSidebarOpen(true)}
-                className="mr-2 md:hidden"
+                className="mr-1 sm:mr-2 md:hidden p-1.5 sm:p-2"
               >
                 <Menu className="h-4 w-4" />
               </Button>
             )}
             
-            <Globe className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              SkyView Coverage
+            <Globe className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+            <h1 className="text-lg sm:text-xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+              <span className="hidden xs:inline">SkyView Coverage</span>
+              <span className="xs:hidden">SkyView</span>
             </h1>
-            <Badge variant="outline" className="ml-2">Beta</Badge>
+            <Badge variant="outline" className="ml-1 sm:ml-2 text-xs">Beta</Badge>
           </div>
           
           {/* Data Loading Status */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             {(isStationsLoading || isTechnicalLoading) && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading data...
+              <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-muted-foreground">
+                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
+                <span className="hidden sm:inline">Loading data...</span>
+                <span className="sm:hidden">Loading</span>
               </div>
             )}
             
             {!isLoading && (
-              <div className="flex items-center gap-4 text-xs">
+              <div className="hidden sm:flex items-center gap-2 lg:gap-4 text-xs">
                 <Badge variant="outline" className="flex items-center gap-1">
                   <MapPin className="h-3 w-3" />
                   {stations.length} Stations
@@ -342,18 +343,13 @@ export default function HomePage() {
             )}
             
             {combinedError && (
-              <Button variant="outline" size="sm" onClick={refetch} className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={refetch} className="flex items-center gap-1 sm:gap-2 p-1.5 sm:p-2">
                 <RefreshCw className="h-3 w-3" />
-                Retry
+                <span className="hidden sm:inline">Retry</span>
               </Button>
             )}
             
-            <div className="flex items-center space-x-2">
-              <Button variant="ghost" size="sm" className="text-muted-foreground">
-                <Settings className="h-4 w-4 mr-1" />
-                Settings
-              </Button>
-            </div>
+         
           </div>
         </div>
         
@@ -371,26 +367,28 @@ export default function HomePage() {
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Mobile Sheet */}
         <Sheet open={isMobileSidebarOpen} onOpenChange={setIsMobileSidebarOpen}>
-          <SheetContent side="left" className="w-80 p-4">
+          <SheetContent side="left" className="w-[85vw] max-w-sm p-3 sm:p-4">
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5" />
+              <SheetTitle className="flex items-center gap-2 text-base">
+                <MapPin className="h-4 w-4 sm:h-5 sm:w-5" />
                 Station Controls
               </SheetTitle>
             </SheetHeader>
-            <div className="mt-4">
+            <div className="mt-3 sm:mt-4 h-full overflow-y-auto">
               <SidebarContent />
             </div>
           </SheetContent>
         </Sheet>
 
         {/* Desktop Sidebar - Hidden on Mobile */}
-        <aside className="hidden md:flex w-80 border-r bg-card/50 backdrop-blur-sm overflow-y-auto p-4">
-          <SidebarContent />
+        <aside className="hidden md:flex w-72 lg:w-80 xl:w-96 border-r bg-card/50 backdrop-blur-sm">
+          <div className="flex-1 overflow-y-auto p-3 lg:p-4">
+            <SidebarContent />
+          </div>
         </aside>
 
         {/* Main Content */}
-        <main className={`flex-1 relative ${isMobile ? 'bg-black' : 'bg-muted/20'}`}>
+        <main className={`flex-1 relative min-h-0 ${isMobile ? 'bg-black' : 'bg-muted/20'}`}>
           <MapComponent 
             stations={stations} 
             overlayData={overlayData} 
@@ -404,12 +402,12 @@ export default function HomePage() {
           {isMobile && !isMobileSidebarOpen && (
             <Button
               onClick={() => setIsMobileSidebarOpen(true)}
-              className="fixed bottom-6 left-6 z-[1000] rounded-full shadow-lg bg-primary hover:bg-primary/90 size-14 p-0"
+              className="fixed bottom-4 left-4 z-[1000] rounded-full shadow-lg bg-primary hover:bg-primary/90 h-12 w-12 sm:h-14 sm:w-14 p-0"
               size="lg"
             >
-              <div className="flex flex-col items-center">
-                <MapPin className="h-5 w-5" />
-                <span className="text-xs font-medium">
+              <div className="flex flex-col items-center justify-center">
+                <MapPin className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="text-[10px] sm:text-xs font-medium leading-none mt-0.5">
                   {stations.filter(s => s.visible).length}
                 </span>
               </div>

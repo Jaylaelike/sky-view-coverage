@@ -1,9 +1,10 @@
 "use client"
 import dynamic from "next/dynamic"
 import { Loader2 } from "lucide-react"
-import React, { useCallback, useRef, useMemo } from "react"
+import React, { useCallback, useRef, useMemo, useState } from "react"
 import type { Station, ImageOverlayData, TechnicalData } from "@/types/map"
 import TechnicalSearch from "@/components/technical-search"
+import ImageOverlayLoadingDialog from "@/components/image-overlay-loading-dialog"
 
 interface MapComponentProps {
   stations: Station[]
@@ -29,6 +30,14 @@ const DynamicMap = dynamic(() => import("./leaflet-map"), {
 
 const MapComponent = ({ stations, overlayData, technicalData, isLoading, isDataLoading, isOverlayLoading }: MapComponentProps) => {
   const flyToTechnicalPointRef = useRef<((data: TechnicalData) => void) | null>(null)
+  const [overlayLoadingState, setOverlayLoadingState] = useState({
+    open: false,
+    loadingCount: 0,
+    totalImages: 1,
+    currentImageUrl: '',
+    error: null as string | null
+  })
+  
   // Memoize visible stations to avoid recalculating on every render
   const visibleStations = useMemo(() => stations.filter(s => s.visible), [stations])
 
@@ -65,14 +74,19 @@ const MapComponent = ({ stations, overlayData, technicalData, isLoading, isDataL
         onTechnicalPointSelect={handleMapTechnicalPointSelect}
       />
 
-      {isOverlayLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-[1000]">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Loader2 className="h-6 w-6 animate-spin" />
-            กำลังโหลดภาพ...
-          </div>
-        </div>
-      )}
+      {/* Image Overlay Loading Dialog */}
+      <ImageOverlayLoadingDialog
+        open={isOverlayLoading || overlayLoadingState.open}
+        onOpenChange={(open) => setOverlayLoadingState(prev => ({ ...prev, open }))}
+        loadingCount={overlayLoadingState.loadingCount}
+        totalImages={overlayLoadingState.totalImages}
+        currentImageUrl={overlayLoadingState.currentImageUrl}
+        error={overlayLoadingState.error}
+        onCancel={() => {
+          setOverlayLoadingState(prev => ({ ...prev, open: false }))
+          // TODO: Add actual cancel logic if needed
+        }}
+      />
 
       {visibleStations.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/20 rounded-lg pointer-events-none">

@@ -7,9 +7,12 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Loader2 } from "lucide-react"
+import { Loader2, AlertTriangle } from "lucide-react"
 import type { Station } from "@/types/map"
 import { Radio, RadioGroup } from "@/components/ui/radio-group"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { isMobile, getRecommendedSettings } from "@/utils/deviceDetection"
+import { WARNING_THRESHOLDS } from "@/constants/performance"
 
 interface StationSelectorProps {
   stations: Station[]
@@ -23,6 +26,12 @@ export default function StationSelector({ stations, onStationChange, onCompareSt
   const [compareMode, setCompareMode] = useState(false)
   const [compareStation1, setCompareStation1] = useState<string>(stations?.[0]?.id || "")
   const [compareStation2, setCompareStation2] = useState<string>(stations?.[1]?.id || "")
+  const [showMobileWarning, setShowMobileWarning] = useState(false)
+  
+  // Device detection and performance settings
+  const deviceIsMobile = isMobile()
+  const performanceSettings = getRecommendedSettings()
+  const maxStations = performanceSettings.maxVisibleMarkers
 
   // Update state when stations data becomes available
   useEffect(() => {
@@ -87,12 +96,33 @@ export default function StationSelector({ stations, onStationChange, onCompareSt
   }
 
   const handleSelectAll = (checked: boolean) => {
+    // Check mobile warning conditions
+    if (checked && deviceIsMobile && stations.length > WARNING_THRESHOLDS.MOBILE_STATION_COUNT) {
+      setShowMobileWarning(true)
+      return
+    }
+    
     const updatedStations = selectedStations.map((station) => ({
       ...station,
       visible: checked,
     }))
     setSelectedStations(updatedStations)
     onStationChange(updatedStations)
+  }
+  
+  const handleSelectAllWithWarning = () => {
+    // Force select all with mobile optimizations
+    const updatedStations = selectedStations.map((station) => ({
+      ...station,
+      visible: true,
+    }))
+    setSelectedStations(updatedStations)
+    onStationChange(updatedStations)
+    setShowMobileWarning(false)
+  }
+  
+  const getVisibleStationCount = () => {
+    return selectedStations.filter(station => station.visible).length
   }
 
   const handleCompare = () => {
@@ -138,16 +168,72 @@ export default function StationSelector({ stations, onStationChange, onCompareSt
           </TabsList>
 
           <TabsContent value="all" className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="select-all"
-                checked={selectedStations.every((s) => s.visible)}
-                onCheckedChange={(checked) => handleSelectAll( !!checked)}
-              />
-              <Label htmlFor="select-all" className="text-sm font-medium">
-                เลือกทั้งหมด
-              </Label>
+            {/* Mobile Performance Warning */}
+            {showMobileWarning && (
+              <Alert className="border-orange-200 bg-orange-50">
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+                <AlertDescription className="text-sm">
+                  <div className="space-y-2">
+                    <p className="font-medium text-orange-800">
+                      ⚠️ การแสดงสถานีทั้งหมดอาจทำให้แอปช้าหรือค้างบนมือถือ
+                    </p>
+                    <p className="text-orange-700">
+                      แนะนำให้เลือกเฉพาะสถานีที่ต้องการ (ไม่เกิน {maxStations} สถานี) เพื่อประสิทธิภาพที่ดีที่สุด
+                    </p>
+                    <div className="flex gap-2 mt-3">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => setShowMobileWarning(false)}
+                        className="text-orange-700 border-orange-300"
+                      >
+                        ยกเลิก
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        onClick={handleSelectAllWithWarning}
+                        className="bg-orange-600 hover:bg-orange-700 text-white"
+                      >
+                        เลือกทั้งหมดต่อไป
+                      </Button>
+                    </div>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {/* Station count and performance indicator */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="select-all"
+                  checked={selectedStations.every((s) => s.visible)}
+                  onCheckedChange={(checked) => handleSelectAll( !!checked)}
+                />
+                <Label htmlFor="select-all" className="text-sm font-medium">
+                  เลือกทั้งหมด
+                </Label>
+              </div>
+              
+              <div className="text-xs text-muted-foreground">
+                <span className={getVisibleStationCount() > maxStations ? "text-orange-600 font-medium" : ""}>
+                  {getVisibleStationCount()}/{stations.length}
+                </span>
+                {deviceIsMobile && (
+                  <span className="ml-2 text-blue-600">
+                    (แนะนำ: ≤{maxStations})
+                  </span>
+                )}
+              </div>
             </div>
+            
+            {/* Performance warning for too many selected stations */}
+            {deviceIsMobile && getVisibleStationCount() > maxStations && (
+              <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded border border-orange-200">
+                <AlertTriangle className="h-3 w-3 inline mr-1" />
+                การเลือกสถานีมากเกินไปอาจทำให้แอปทำงานช้า
+              </div>
+            )}
 
             <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
               {selectedStations.map((station) => (

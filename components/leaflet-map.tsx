@@ -6,6 +6,7 @@ import { technicalData, getTechnicalData } from "@/data/technical"
 import TechnicalModal from "@/components/technical-modal" // Assuming TechnicalModal is defined elsewhere
 import CoverageLegend from "@/components/coverage-legend"
 import LocationAnalysis from "@/components/location-analysis"
+import ImageOverlayLoadingDialog from "@/components/image-overlay-loading-dialog"
 import { Button } from "@/components/ui/button"
 import { MapPin, Loader2, Satellite, Maximize2 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -23,6 +24,10 @@ import {
   clearCompressedImageCache,
   getCompressionCacheStats 
 } from "@/lib/image-compression"
+import { StationManager } from "./StationManager"
+import { PerformanceMonitor } from "./PerformanceMonitor"
+import PerformanceSettings from "./PerformanceSettings"
+import { getRecommendedSettings } from "@/utils/deviceDetection"
 
 interface LeafletMapProps {
   stations: Station[]
@@ -35,6 +40,8 @@ interface LeafletMapProps {
 export default function LeafletMap({ stations, technicalData: propTechnicalData, isDataLoading, onTechnicalPointSelect, shouldFitBounds = false }: LeafletMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
+  const stationManagerRef = useRef<StationManager | null>(null)
+  const performanceMonitorRef = useRef<PerformanceMonitor | null>(null)
   const overlayRefs = useRef<Record<string, any>>({})
   const markerRefs = useRef<Record<string, any>>({})
   const technicalMarkerRefs = useRef<Record<string, any>>({})
@@ -42,7 +49,23 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
   const [isMapLoading, setIsMapLoading] = useState(true)
   // Track number of image overlays currently loading
   const [overlayLoadingCount, setOverlayLoadingCount] = useState(0)
+  const [overlayLoadingState, setOverlayLoadingState] = useState({
+    open: false,
+    loadingCount: 0,
+    totalImages: 1,
+    currentImageUrl: '',
+    error: null as string | null
+  })
   const [error, setError] = useState<string | null>(null)
+  
+  // Performance settings
+  const [performanceSettings, setPerformanceSettings] = useState(() => getRecommendedSettings())
+  const [performanceMode, setPerformanceMode] = useState(() => {
+    const settings = getRecommendedSettings() as any
+    return settings.enableProgressiveLoading || false
+  })
+  const [showPerformanceSettings, setShowPerformanceSettings] = useState(false)
+  const [performanceStats, setPerformanceStats] = useState<any>(null)
   const [selectedTechnical, setSelectedTechnical] = useState<TechnicalData | null>(null)
   const [technicalModalOpen, setTechnicalModalOpen] = useState(false)
   const [currentTechnicalData, setCurrentTechnicalData] = useState<TechnicalData[]>([])
@@ -72,6 +95,52 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     const memory = (navigator as any).deviceMemory || 4
     return cores <= 4 || memory <= 2
   }, [])
+  
+  // Initialize StationManager and PerformanceMonitor when map is ready
+  useEffect(() => {
+    if (isMapReady && mapInstanceRef.current && !stationManagerRef.current) {
+      stationManagerRef.current = new StationManager(mapInstanceRef.current)
+      console.log('StationManager initialized with performance settings:', performanceSettings)
+      
+      // Initialize PerformanceMonitor
+      performanceMonitorRef.current = new PerformanceMonitor()
+      performanceMonitorRef.current.startMonitoring()
+      
+      // Set up performance monitoring callbacks
+      performanceMonitorRef.current.onWarning((type: string, message: string) => {
+        console.warn('Performance Warning:', type, message)
+        
+        // Auto-enable performance mode on critical warnings
+        if (type === 'critical-memory' || type === 'low-fps') {
+          setPerformanceMode(true)
+          if (stationManagerRef.current) {
+            stationManagerRef.current.setClusteringEnabled(true)
+          }
+        }
+      })
+      
+      performanceMonitorRef.current.onReport((report: any) => {
+        setPerformanceStats(report)
+        
+        // Update station count in monitor
+        if (stationManagerRef.current && performanceMonitorRef.current) {
+          const stats = stationManagerRef.current.getPerformanceStats() as any
+          performanceMonitorRef.current.updateStationCount(stats.renderedStations || 0)
+        }
+      })
+    }
+    
+    return () => {
+      if (stationManagerRef.current) {
+        stationManagerRef.current.cleanup()
+        stationManagerRef.current = null
+      }
+      if (performanceMonitorRef.current) {
+        performanceMonitorRef.current.cleanup()
+        performanceMonitorRef.current = null
+      }
+    }
+  }, [isMapReady])
 
   // Memoize visible stations to prevent unnecessary re-renders
   const visibleStations = useMemo(() => 
@@ -79,11 +148,7 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     [stations]
   )
 
-  // Memoize bounds calculation
-  const mapBounds = useMemo(() => {
-    if (visibleStations.length === 0) return null
-    return visibleStations.map(station => station.bounds)
-  }, [visibleStations])
+  // Note: mapBounds removed as it's handled by StationManager now
 
   // Use prop technical data if available, otherwise load from CSV
   useEffect(() => {
@@ -175,109 +240,65 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     }
   }, [])
 
-  // Optimized overlay updates using memoized visible stations
+  // Update StationManager with new station data
   useEffect(() => {
-    if (!isMapReady || !mapInstanceRef.current) return
-
-    const map = mapInstanceRef.current
-
-    const updateOverlays = async () => {
-      try {
-        const L = await import("leaflet")
-
-        // Process each station
-        for (const station of stations) {
-          // Remove existing overlay if it exists
-          if (overlayRefs.current[station.id]) {
-            map.removeLayer(overlayRefs.current[station.id])
-            delete overlayRefs.current[station.id]
-          }
-
-          // Add new overlay if station is visible
-          if (station.visible && station.imageUrl) {
-            console.log(`Adding overlay for station: ${station.name}`)
-            
-            try {
-              // Compress the image before creating overlay
-              setOverlayLoadingCount(c => c + 1) // increment loader counter
-              const compressedImageUrl = await compressImageFromUrl(station.imageUrl)
-              
-              const imageOverlay = L.imageOverlay(compressedImageUrl, station.bounds, {
-                opacity: 0.6,
-                interactive: false,
-                crossOrigin: "anonymous",
-                className: `station-overlay-${station.id}`,
-                // Add performance optimizations
-                pane: 'overlayPane',
-                bubblingMouseEvents: false
-              })
-
-              imageOverlay.on("load", () => {
-                setOverlayLoadingCount((c) => Math.max(0, c - 1))
-                console.log(`Compressed overlay for ${station.name} loaded successfully`)
-              })
-
-              imageOverlay.on("error", (e: any) => {
-                setOverlayLoadingCount((c) => Math.max(0, c - 1))
-                console.error(`Failed to load overlay for ${station.name}:`, e)
-                setError(`Failed to load image for ${station.name}. Please check the URL.`)
-              })
-
-              imageOverlay.addTo(map)
-              overlayRefs.current[station.id] = imageOverlay
-            } catch (compressionError) {
-              console.error(`Failed to compress image for ${station.name}:`, compressionError)
-              // Fallback to original image URL if compression fails
-              setOverlayLoadingCount(c => c + 1)
-              const imageOverlay = L.imageOverlay(station.imageUrl, station.bounds, {
-                opacity: 0.6,
-                interactive: false,
-                crossOrigin: "anonymous",
-                className: `station-overlay-${station.id}`,
-                pane: 'overlayPane',
-                bubblingMouseEvents: false
-              })
-
-              imageOverlay.on("load", () => {
-                setOverlayLoadingCount((c) => Math.max(0, c - 1))
-                console.log(`Original overlay for ${station.name} loaded successfully (compression failed)`)
-              })
-
-              imageOverlay.on("error", (e: any) => {
-                setOverlayLoadingCount((c) => Math.max(0, c - 1))
-                console.error(`Failed to load overlay for ${station.name}:`, e)
-                setError(`Failed to load image for ${station.name}. Please check the URL.`)
-              })
-
-              imageOverlay.addTo(map)
-              overlayRefs.current[station.id] = imageOverlay
+    if (stationManagerRef.current && stations.length > 0) {
+      // Start render measurement
+      performanceMonitorRef.current?.startRenderMeasure('station-update')
+      
+      // Pre-process stations with compressed images if needed
+      const processStations = async () => {
+        const processedStations = await Promise.all(
+          stations.map(async (station) => {
+            const stationWithCompression = station as any
+            if (station.imageUrl && !stationWithCompression.compressedImageUrl) {
+              try {
+                const compressedUrl = await compressImageFromUrl(station.imageUrl)
+                return { ...station, compressedImageUrl: compressedUrl } as Station
+              } catch (error) {
+                console.warn(`Failed to compress image for ${station.name}:`, error)
+                return station
+              }
             }
-          }
-        }
-
-        // Fit bounds to visible stations only on initial load or when explicitly requested
-        if (visibleStations.length > 0 && (!hasInitializedView || shouldFitBounds)) {
-          const bounds = L.latLngBounds([])
-          visibleStations.forEach((station) => {
-            bounds.extend(station.bounds[0])
-            bounds.extend(station.bounds[1])
+            return station
           })
-          map.fitBounds(bounds, { padding: [20, 20] })
-          if (!hasInitializedView) {
-            setHasInitializedView(true)
-            console.log('Initial view set to fit station bounds')
-          } else if (shouldFitBounds) {
-            console.log('View fitted to bounds on request')
-          }
-        }
-      } catch (error) {
-        console.error("Error updating overlays:", error)
-        setError("Error displaying overlays on map")
+        )
+        
+        stationManagerRef.current?.setStations(processedStations)
+        
+        // End render measurement
+        performanceMonitorRef.current?.endRenderMeasure('station-update')
+      }
+      
+      if (performanceMode) {
+        processStations()
+      } else {
+        // Use original approach for non-performance mode
+        stationManagerRef.current.setStations(stations)
+        performanceMonitorRef.current?.endRenderMeasure('station-update')
       }
     }
-
-    updateOverlays()
-  }, [stations, isMapReady, visibleStations, hasInitializedView, shouldFitBounds])
+    
+    // Fit bounds to visible stations only on initial load or when explicitly requested
+    if (visibleStations.length > 0 && (!hasInitializedView || shouldFitBounds) && mapInstanceRef.current) {
+      const fitBounds = async () => {
+        const L = await import("leaflet")
+        const bounds = L.latLngBounds([])
+        visibleStations.forEach((station) => {
+          bounds.extend(station.bounds[0])
+          bounds.extend(station.bounds[1])
+        })
+        mapInstanceRef.current.fitBounds(bounds, { padding: [20, 20] })
+        if (!hasInitializedView) {
+          setHasInitializedView(true)
+          console.log('Initial view set to fit station bounds')
+        } else if (shouldFitBounds) {
+          console.log('View fitted to bounds on request')
+        }
+      }
+      fitBounds()
+    }
+  }, [stations, isMapReady, visibleStations, hasInitializedView, shouldFitBounds, performanceMode])
 
   // Add technical data markers when data is loaded and map is ready
   useEffect(() => {
@@ -769,11 +790,52 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
     setCurrentLayer(layerType)
   }, [])
 
+  // Handle performance settings changes
+  const handlePerformanceSettingsChange = (newSettings: any) => {
+    setPerformanceSettings(newSettings)
+    setPerformanceMode(newSettings.enableProgressiveLoading || false)
+    
+    // Apply settings to StationManager
+    if (stationManagerRef.current) {
+      stationManagerRef.current.setClusteringEnabled(newSettings.enableClustering || false)
+      stationManagerRef.current.forceUpdate()
+    }
+    
+    // Store settings in localStorage
+    try {
+      localStorage.setItem('sky-view-performance-settings', JSON.stringify(newSettings))
+    } catch (error) {
+      console.warn('Failed to save performance settings:', error)
+    }
+  }
+  
+  // Load saved performance settings on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sky-view-performance-settings')
+      if (saved) {
+        const savedSettings = JSON.parse(saved)
+        setPerformanceSettings(savedSettings)
+        setPerformanceMode(savedSettings.enableProgressiveLoading || false)
+      }
+    } catch (error) {
+      console.warn('Failed to load saved performance settings:', error)
+    }
+  }, [])
+  
   // Cleanup blob URLs on component unmount to prevent memory leaks
   useEffect(() => {
     return () => {
       // Clean up all cached blob URLs
       clearCompressedImageCache()
+      // Cleanup StationManager
+      if (stationManagerRef.current) {
+        stationManagerRef.current.cleanup()
+      }
+      // Cleanup PerformanceMonitor
+      if (performanceMonitorRef.current) {
+        performanceMonitorRef.current.cleanup()
+      }
     }
   }, [])
 
@@ -815,29 +877,29 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
       {/* Control Buttons - Mobile-first responsive design */}
       <div className={`absolute z-[1000] ${
         isMobile 
-          ? 'bottom-4 left-2 right-2 flex flex-col gap-2' 
+          ? 'bottom-2 left-2 right-2 flex flex-col gap-2' 
           : 'bottom-4 left-4 right-4 flex flex-col sm:flex-row gap-2 sm:justify-between'
       }`}>
         {/* Main control buttons */}
-        <div className={`flex ${isMobile ? 'flex-row justify-center' : 'flex-col sm:flex-row'} gap-2`}>
+        <div className={`flex ${isMobile ? 'flex-row justify-between' : 'flex-col sm:flex-row'} gap-2`}>
           {/* Current Location Button */}
           <Button
             onClick={flyToUserLocation}
             disabled={locationLoading || !isMapReady}
             className={`${
               isMobile 
-                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xl text-base px-4 py-3 h-auto flex-1 touch-manipulation' 
+                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-xl text-sm px-3 py-2.5 h-auto flex-1 touch-manipulation min-w-0' 
                 : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg text-sm px-3 py-2 h-auto'
             }`}
             title="Go to my location"
             data-location-analysis
           >
             {locationLoading ? (
-              <Loader2 className={`h-4 w-4 animate-spin ${isMobile ? 'mr-3' : 'mr-2'}`} />
+              <Loader2 className={`h-4 w-4 animate-spin ${isMobile ? 'mr-2' : 'mr-2'}`} />
             ) : (
-              <MapPin className={`h-4 w-4 ${isMobile ? 'mr-3' : 'mr-2'}`} />
+              <MapPin className={`h-4 w-4 ${isMobile ? 'mr-2' : 'mr-2'}`} />
             )}
-            <span className={isMobile ? 'block' : 'hidden sm:inline'}>
+            <span className={isMobile ? 'text-xs leading-tight' : 'hidden sm:inline'}>
               {isMobile ? 'ตำแหน่งปัจจุบัน' : 'ตำแหน่งปัจจุบัน'}
             </span>
             <span className={isMobile ? 'hidden' : 'sm:hidden'}>ตำแหน่ง</span>
@@ -849,13 +911,13 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
             disabled={!isMapReady || visibleStations.length === 0}
             className={`${
               isMobile 
-                ? 'bg-green-600 hover:bg-green-700 text-white shadow-xl text-base px-4 py-3 h-auto flex-1 touch-manipulation' 
+                ? 'bg-green-600 hover:bg-green-700 text-white shadow-xl text-sm px-3 py-2.5 h-auto flex-1 touch-manipulation min-w-0' 
                 : 'bg-green-600 hover:bg-green-700 text-white shadow-lg text-sm px-3 py-2 h-auto'
             }`}
             title="Fit view to all visible stations"
           >
-            <Maximize2 className={`h-4 w-4 ${isMobile ? 'mr-3' : 'mr-2'}`} />
-            <span className={isMobile ? 'block' : 'hidden sm:inline'}>
+            <Maximize2 className={`h-4 w-4 ${isMobile ? 'mr-2' : 'mr-2'}`} />
+            <span className={isMobile ? 'text-xs leading-tight' : 'hidden sm:inline'}>
               {isMobile ? 'แสดงทุกสถานี' : 'แสดงทุกสถานี'}
             </span>
             <span className={isMobile ? 'hidden' : 'sm:hidden'}>ทุกสถานี</span>
@@ -867,13 +929,13 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
             disabled={!isMapReady}
             className={`${
               isMobile 
-                ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-xl text-base px-4 py-3 h-auto flex-1 touch-manipulation' 
+                ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-xl text-sm px-3 py-2.5 h-auto flex-1 touch-manipulation min-w-0' 
                 : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg text-sm px-3 py-2 h-auto'
             }`}
             title={currentLayer === 'street' ? 'Switch to satellite view' : 'Switch to street view'}
           >
-            <Satellite className={`h-4 w-4 ${isMobile ? 'mr-3' : 'mr-2'}`} />
-            <span className={isMobile ? 'block' : 'hidden sm:inline'}>
+            <Satellite className={`h-4 w-4 ${isMobile ? 'mr-2' : 'mr-2'}`} />
+            <span className={isMobile ? 'text-xs leading-tight' : 'hidden sm:inline'}>
               {currentLayer === 'street' ? 
                 (isMobile ? 'ดาวเทียม' : 'ดาวเทียม') : 
                 (isMobile ? 'แผนที่' : 'แผนที่')
@@ -890,6 +952,22 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           <div className="hidden sm:flex bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded-full text-xs shadow-lg items-center gap-2 self-end">
             <Satellite className="h-3 w-3" />
             <span>แผนที่พร้อมใช้งาน</span>
+            {performanceMode && (
+              <span 
+                className="ml-2 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs cursor-pointer hover:bg-blue-200 transition-colors"
+                onClick={() => setShowPerformanceSettings(true)}
+                title="คลิกเพื่อตั้งค่าประสิทธิภาพ"
+              >
+                โหมดประสิทธิภาพ
+              </span>
+            )}
+            <button
+              className="ml-2 p-1 text-green-600 hover:bg-green-100 rounded transition-colors"
+              onClick={() => setShowPerformanceSettings(true)}
+              title="ตั้งค่าประสิทธิภาพ"
+            >
+              ⚙️
+            </button>
           </div>
         )}
       </div>
@@ -922,15 +1000,24 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
         </div>
       )}
       
-      {/* Loading spinner for overlay images */}
-      {overlayLoadingCount > 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm transition-opacity duration-300 z-[1200]">
-          <div className="bg-white/90 dark:bg-zinc-900/90 rounded-xl shadow-xl px-6 py-5 flex flex-col items-center space-y-3 animate-pulse">
-            <Loader2 className="h-8 w-8 text-primary animate-spin" />
-            <span className="text-sm font-medium text-primary/80">Loading image layer...</span>
-          </div>
-        </div>
-      )}
+      {/* Image Overlay Loading Dialog */}
+      <ImageOverlayLoadingDialog
+        open={overlayLoadingCount > 0 || overlayLoadingState.open}
+        onOpenChange={(open) => {
+          setOverlayLoadingState(prev => ({ ...prev, open }))
+          if (!open) {
+            setOverlayLoadingCount(0)
+          }
+        }}
+        loadingCount={overlayLoadingCount || overlayLoadingState.loadingCount}
+        totalImages={overlayLoadingState.totalImages}
+        currentImageUrl={overlayLoadingState.currentImageUrl}
+        error={overlayLoadingState.error}
+        onCancel={() => {
+          setOverlayLoadingCount(0)
+          setOverlayLoadingState(prev => ({ ...prev, open: false, loadingCount: 0 }))
+        }}
+      />
 
       {/* Technical Modal */}
       {selectedTechnical && (
@@ -953,6 +1040,14 @@ export default function LeafletMap({ stations, technicalData: propTechnicalData,
           onClose={closeLocationAnalysis}
         />
       )}
+      
+      {/* Performance Settings Panel */}
+      <PerformanceSettings
+        isOpen={showPerformanceSettings}
+        onClose={() => setShowPerformanceSettings(false)}
+        onSettingsChange={handlePerformanceSettingsChange}
+        currentStats={stationManagerRef.current?.getPerformanceStats()}
+      />
     </>
   )
 }
